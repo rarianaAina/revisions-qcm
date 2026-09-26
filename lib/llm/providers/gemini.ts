@@ -43,21 +43,27 @@ export function createGeminiProvider(
           }),
         });
       } catch (cause) {
-        throw new LLMError("Impossible de joindre l'API Gemini.", "gemini", cause);
+        throw new LLMError("Impossible de joindre l'API Gemini.", "gemini", {
+          cause,
+          providerUnavailable: true,
+        });
       }
 
       const payload = (await response.json().catch(() => ({}))) as GeminiResponse;
 
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
-          throw new LLMError("Clé Gemini refusée. Vérifiez GEMINI_API_KEY.", "gemini");
+          throw new LLMError("Clé Gemini refusée. Vérifiez GEMINI_API_KEY.", "gemini", {
+            providerUnavailable: true,
+          });
         }
         if (response.status === 429) {
-          throw new LLMError("Quota Gemini atteint. Réessayez plus tard.", "gemini");
+          throw new LLMError("Quota Gemini atteint.", "gemini", { providerUnavailable: true });
         }
         throw new LLMError(
           `Erreur Gemini (${response.status}) : ${payload.error?.message ?? "réponse inattendue"}`,
           "gemini",
+          { providerUnavailable: response.status >= 500 },
         );
       }
 

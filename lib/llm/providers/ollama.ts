@@ -33,7 +33,7 @@ export function createOllamaProvider(baseUrl: string, model: string): LLMProvide
         throw new LLMError(
           `Impossible de joindre Ollama sur ${root}. Vérifiez qu'il est démarré (« ollama serve »).`,
           "ollama",
-          cause,
+          { cause, providerUnavailable: true },
         );
       }
 
@@ -45,7 +45,9 @@ export function createOllamaProvider(baseUrl: string, model: string): LLMProvide
             "ollama",
           );
         }
-        throw new LLMError(`Ollama a répondu ${response.status}. ${detail.slice(0, 300)}`, "ollama");
+        throw new LLMError(`Ollama a répondu ${response.status}. ${detail.slice(0, 300)}`, "ollama", {
+          providerUnavailable: response.status >= 500,
+        });
       }
 
       const payload = (await response.json()) as { message?: { content?: string } };

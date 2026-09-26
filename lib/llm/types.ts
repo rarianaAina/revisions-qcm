@@ -16,15 +16,30 @@ export interface LLMProvider {
   generateJSON(request: LLMRequest): Promise<unknown>;
 }
 
+export interface LLMErrorOptions {
+  cause?: unknown;
+  /**
+   * Vrai quand le fournisseur lui-même ne peut pas rendre le service :
+   * quota épuisé, clé refusée, panne réseau, erreur serveur. Dans ce cas
+   * l'orchestrateur bascule sur le fournisseur suivant.
+   *
+   * Faux pour les problèmes qui se reproduiraient à l'identique ailleurs :
+   * réponse illisible, contenu refusé, réponse tronquée. Basculer ne ferait
+   * que consommer un second quota pour rien.
+   */
+  providerUnavailable?: boolean;
+}
+
 /** Erreur imputable au fournisseur (reseau, quota, cle invalide, sortie illisible). */
 export class LLMError extends Error {
-  constructor(
-    message: string,
-    readonly provider: ProviderId,
-    readonly cause?: unknown,
-  ) {
-    super(message);
+  readonly provider: ProviderId;
+  readonly providerUnavailable: boolean;
+
+  constructor(message: string, provider: ProviderId, options: LLMErrorOptions = {}) {
+    super(message, { cause: options.cause });
     this.name = "LLMError";
+    this.provider = provider;
+    this.providerUnavailable = options.providerUnavailable ?? false;
   }
 }
 

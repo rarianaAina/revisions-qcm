@@ -21,7 +21,14 @@ export interface OpenAICompatibleConfig {
 }
 
 export function createOpenAICompatibleProvider(config: OpenAICompatibleConfig): LLMProvider {
-  const client = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
+  const client = new OpenAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
+    // Par défaut le SDK réessaie deux fois, ce qui consomme trois unités de
+    // quota avant d'échouer. La résilience est assurée par la chaîne de
+    // fournisseurs : on garde un seul réessai, pour les coupures passagères.
+    maxRetries: 1,
+  });
 
   return {
     id: config.id,
@@ -55,23 +62,31 @@ export function createOpenAICompatibleProvider(config: OpenAICompatibleConfig): 
       } catch (cause) {
         if (cause instanceof LLMError) throw cause;
         if (cause instanceof OpenAI.AuthenticationError) {
-          throw new LLMError(
-            `Clé ${config.label} refusée. Vérifiez ${config.keyEnvVar}.`,
-            config.id,
+          // Clé invalide : ce fournisseur est inutilisable, on passe au suivant.
+          throw new LLMError(`Clé ${config.label} refusée. Vérifiez ${config.keyEnvVar}.`, config.id, {
             cause,
-          );
+            providerUnavailable: true,
+          });
         }
         if (cause instanceof OpenAI.RateLimitError) {
           throw new LLMError(
-            `Quota ${config.label} atteint. Attendez quelques instants ou réduisez le nombre de questions.`,
+            `Quota ${config.label} atteint.`,
             config.id,
-            cause,
+            { cause, providerUnavailable: true },
           );
         }
         if (cause instanceof OpenAI.APIError) {
-          throw new LLMError(`Erreur ${config.label} : ${cause.message}`, config.id, cause);
+          // 5xx : panne côté fournisseur. 4xx : requête en cause, inutile de basculer.
+          throw new LLMError(`Erreur ${config.label} : ${cause.message}`, config.id, {
+            cause,
+            providerUnavailable: (cause.status ?? 0) >= 500,
+          });
         }
-        throw new LLMError(`Appel à ${config.label} impossible.`, config.id, cause);
+        // Panne réseau ou délai dépassé.
+        throw new LLMError(`Appel à ${config.label} impossible.`, config.id, {
+          cause,
+          providerUnavailable: true,
+        });
       }
     },
   };

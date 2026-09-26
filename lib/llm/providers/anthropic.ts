@@ -1,8 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { LLMError, parseJSONResponse, type LLMProvider, type LLMRequest } from "../types";
 
-export function createAnthropicProvider(apiKey: string, model: string): LLMProvider {
-  const client = new Anthropic({ apiKey });
+export function createAnthropicProvider(
+  apiKey: string,
+  model: string,
+  baseURL?: string,
+): LLMProvider {
+  const client = new Anthropic({
+    apiKey,
+    baseURL,
+    // Voir openai-compatible.ts : la bascule remplace les réessais répétés.
+    maxRetries: 1,
+  });
 
   return {
     id: "anthropic",
@@ -44,15 +53,27 @@ export function createAnthropicProvider(apiKey: string, model: string): LLMProvi
       } catch (cause) {
         if (cause instanceof LLMError) throw cause;
         if (cause instanceof Anthropic.AuthenticationError) {
-          throw new LLMError("Clé Anthropic refusée. Vérifiez ANTHROPIC_API_KEY.", "anthropic", cause);
+          throw new LLMError("Clé Anthropic refusée. Vérifiez ANTHROPIC_API_KEY.", "anthropic", {
+            cause,
+            providerUnavailable: true,
+          });
         }
         if (cause instanceof Anthropic.RateLimitError) {
-          throw new LLMError("Quota Anthropic atteint. Réessayez plus tard.", "anthropic", cause);
+          throw new LLMError("Quota Anthropic atteint.", "anthropic", {
+            cause,
+            providerUnavailable: true,
+          });
         }
         if (cause instanceof Anthropic.APIError) {
-          throw new LLMError(`Erreur Anthropic : ${cause.message}`, "anthropic", cause);
+          throw new LLMError(`Erreur Anthropic : ${cause.message}`, "anthropic", {
+            cause,
+            providerUnavailable: (cause.status ?? 0) >= 500,
+          });
         }
-        throw new LLMError("Appel à Claude impossible.", "anthropic", cause);
+        throw new LLMError("Appel à Claude impossible.", "anthropic", {
+          cause,
+          providerUnavailable: true,
+        });
       }
     },
   };

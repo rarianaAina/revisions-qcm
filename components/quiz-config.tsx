@@ -245,6 +245,8 @@ export function QuizConfig({
         </Alert>
       )}
 
+      {llmReady && <p className="text-xs text-muted">{llmMessage}</p>}
+
       <Button size="lg" className="w-full" disabled={generating || !llmReady} onClick={generate}>
         {generating ? (
           <>

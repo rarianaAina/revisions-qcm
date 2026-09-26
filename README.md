@@ -34,8 +34,11 @@ Deux variables sont obligatoires : `DATABASE_URL` et une clé d'API LLM.
 | `GEMINI_API_KEY` | clé Google AI Studio, **gratuite** | — |
 | `GROQ_API_KEY` | clé Groq, **gratuite** | — |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | alternatives payantes | — |
-| `LLM_PROVIDER` | `gemini`, `groq`, `openai`, `anthropic`, `ollama` | détection automatique |
-| `LLM_MODEL` | modèle à utiliser | dépend du fournisseur |
+| `LLM_PROVIDER` | fournisseur principal | détection automatique |
+| `LLM_FALLBACK` | `off` pour désactiver la bascule | activée |
+| `LLM_MODEL` | modèle du fournisseur principal | dépend du fournisseur |
+| `GEMINI_MODEL`, `GROQ_MODEL`, … | modèle d'un fournisseur précis, secours compris | défaut du fournisseur |
+| `GEMINI_BASE_URL`, `GROQ_BASE_URL`, … | proxy ou passerelle pour un fournisseur précis | API officielle |
 | `LLM_BASE_URL` | pour viser un proxy ou une passerelle compatible | API officielle |
 
 Les clés ne sont lues que côté serveur et ne sont jamais transmises au
@@ -79,8 +82,30 @@ et renseignez `GEMINI_API_KEY`. Le modèle par défaut est `gemini-3.8-flash`.
 `openai/gpt-oss-120b`). OpenAI et Anthropic restent disponibles si vous
 préférez une offre payante.
 
-Quand plusieurs clés sont présentes, l'ordre de détection est : Gemini, Groq,
-OpenAI, Anthropic. `LLM_PROVIDER` force explicitement le choix.
+#### Bascule automatique entre fournisseurs
+
+Renseignez **plusieurs clés** et l'application les enchaîne : si le fournisseur
+principal devient indisponible — quota épuisé, clé refusée, panne, erreur
+serveur — la génération bascule sur le suivant, sans intervention.
+
+L'ordre par défaut privilégie le gratuit : Gemini, Groq, OpenAI, Anthropic.
+`LLM_PROVIDER` force le **principal** ; les autres clés renseignées restent
+utilisées en secours. `LLM_FALLBACK=off` désactive la bascule.
+
+La bascule ne se déclenche **que** sur une indisponibilité du fournisseur. Si
+le modèle répond mais mal — JSON illisible, réponse tronquée, contenu refusé —
+il n'y a pas de bascule : le problème se reproduirait à l'identique ailleurs,
+et consommerait un second quota pour rien.
+
+Un fournisseur tombé en panne est écarté pour toute la durée de la génération :
+sur un cours long découpé en 6 appels, on ne réinterroge pas six fois un
+service dont le quota est déjà épuisé. Chaque bascule est signalée dans les
+avertissements affichés à la fin de la génération.
+
+Attention si vous mêlez gratuit et payant : une clé OpenAI ou Anthropic
+renseignée **sera** utilisée en secours, donc facturée. Utilisez
+`LLM_FALLBACK=off` pour l'éviter. Le fournisseur retenu et sa chaîne de secours
+sont affichés sous le bouton de génération.
 
 ## 3. Lancer l'application
 

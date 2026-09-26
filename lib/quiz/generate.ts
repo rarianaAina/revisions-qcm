@@ -1,4 +1,4 @@
-import { getLLMProvider, LLMError } from "@/lib/llm";
+import { getLLMProviders, LLMError, type LLMProvider, type LLMRequest } from "@/lib/llm";
 import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/llm/prompt";
 import type { Quiz, QuizOptions } from "@/types/quiz";
 import { distributeQuestions, pickChunks, splitTextIntoChunks } from "./chunk";
@@ -31,11 +31,63 @@ export async function generateQuiz(text: string, options: QuizOptions): Promise<
     );
   }
 
-  const provider = getLLMProvider();
+  const warnings: string[] = [];
+
+  const providers = getLLMProviders();
+  // Fournisseurs écartés pour la durée de cette génération : inutile de
+  // relancer six fois un service dont le quota est déjà épuisé.
+  const unavailable = new Set<string>();
+
+  /**
+   * Essaie les fournisseurs dans l'ordre. On ne passe au suivant que si le
+   * précédent est hors service (quota, clé refusée, panne) — pas si le modèle
+   * a simplement mal répondu, ce qui se reproduirait à l'identique.
+   */
+  async function callWithFallback(
+    request: LLMRequest,
+  ): Promise<{ raw: unknown; provider: LLMProvider }> {
+    const candidates = providers.filter((p) => !unavailable.has(p.id));
+    if (candidates.length === 0) {
+      throw new LLMError(
+        "Tous les fournisseurs configurés sont indisponibles (quota épuisé ou service en panne).",
+        providers[0].id,
+        { providerUnavailable: true },
+      );
+    }
+
+    let lastUnavailable: LLMError | null = null;
+
+    for (const candidate of candidates) {
+      try {
+        return { raw: await candidate.generateJSON(request), provider: candidate };
+      } catch (error) {
+        if (error instanceof LLMError && error.providerUnavailable) {
+          unavailable.add(candidate.id);
+          lastUnavailable = error;
+          warnings.push(
+            `${candidate.label} indisponible (${error.message}) — bascule vers le fournisseur suivant.`,
+          );
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    // Toute la chaîne y est passée : on le dit explicitement plutôt que de
+    // remonter la seule erreur du dernier fournisseur essayé.
+    const names = candidates.map((c) => c.label).join(", ");
+    throw new LLMError(
+      candidates.length > 1
+        ? `Tous les fournisseurs sont indisponibles (${names}). Dernière erreur : ${lastUnavailable?.message ?? "inconnue"}`
+        : (lastUnavailable?.message ?? "Aucun fournisseur disponible."),
+      candidates[candidates.length - 1].id,
+      { providerUnavailable: true },
+    );
+  }
+
   const chunks = pickChunks(splitTextIntoChunks(source));
   const allocation = distributeQuestions(options.numQuestions, chunks.length);
 
-  const warnings: string[] = [];
   const questions: Quiz["questions"] = [];
   let title: string | null = null;
   let lastError: unknown = null;
@@ -44,7 +96,7 @@ export async function generateQuiz(text: string, options: QuizOptions): Promise<
     const wanted = allocation[i];
 
     try {
-      const raw = await provider.generateJSON({
+      const { raw } = await callWithFallback({
         system: SYSTEM_PROMPT,
         user: buildUserPrompt({
           text: chunks[i],
@@ -82,7 +134,7 @@ export async function generateQuiz(text: string, options: QuizOptions): Promise<
     if (lastError instanceof LLMError) throw lastError;
     throw new LLMError(
       `Aucune question n'a pu être générée. ${warnings[0] ?? ""}`.trim(),
-      provider.id,
+      providers[0].id,
     );
   }
 
