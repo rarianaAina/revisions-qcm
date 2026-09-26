@@ -5,6 +5,19 @@ export const DEFAULT_CHUNK_SIZE = 12_000;
 export const MAX_CHUNKS_USED = 6;
 
 /**
+ * Nombre de questions qu'un morceau de 12 000 caractères alimente sans peine.
+ * C'est ce ratio qui détermine combien de morceaux envoyer : demander 5
+ * questions ne doit pas coûter autant que d'en demander 30.
+ */
+export const QUESTIONS_PER_CHUNK = 8;
+
+/** Combien de morceaux envoyer pour obtenir `numQuestions` questions. */
+export function chunkCountFor(numQuestions: number, available: number): number {
+  const needed = Math.ceil(numQuestions / QUESTIONS_PER_CHUNK);
+  return Math.max(1, Math.min(needed, MAX_CHUNKS_USED, available));
+}
+
+/**
  * Decoupe le texte du cours en morceaux exploitables par le LLM.
  *
  * Strategie volontairement simple (pas de vectorisation) : on coupe aux
@@ -80,11 +93,20 @@ export function distributeQuestions(total: number, count: number): number[] {
 }
 
 /**
- * Selectionne au plus `MAX_CHUNKS_USED` morceaux, repartis sur tout le cours
- * afin que le QCM couvre le debut, le milieu et la fin.
+ * Sélectionne `count` morceaux répartis sur tout le cours, pour que le QCM en
+ * couvre le début, le milieu et la fin.
+ *
+ * À l'intérieur de chaque tranche le morceau est tiré au hasard : deux QCM
+ * générés depuis le même cours ne portent donc pas sur exactement les mêmes
+ * passages, ce qui compte quand on en regénère un pour réviser autrement.
  */
-export function pickChunks(chunks: string[], max = MAX_CHUNKS_USED): string[] {
-  if (chunks.length <= max) return chunks;
-  const step = chunks.length / max;
-  return Array.from({ length: max }, (_, i) => chunks[Math.floor(i * step)]);
+export function pickChunks(chunks: string[], count: number): string[] {
+  if (count >= chunks.length) return chunks;
+
+  const stride = chunks.length / count;
+  return Array.from({ length: count }, (_, i) => {
+    const first = Math.floor(i * stride);
+    const last = Math.min(chunks.length - 1, Math.ceil((i + 1) * stride) - 1);
+    return chunks[first + Math.floor(Math.random() * (last - first + 1))];
+  });
 }

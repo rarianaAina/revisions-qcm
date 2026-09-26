@@ -1,7 +1,7 @@
 import { getLLMProviders, LLMError, type LLMProvider, type LLMRequest } from "@/lib/llm";
 import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/llm/prompt";
 import type { Quiz, QuizOptions } from "@/types/quiz";
-import { distributeQuestions, pickChunks, splitTextIntoChunks } from "./chunk";
+import { chunkCountFor, distributeQuestions, pickChunks, splitTextIntoChunks } from "./chunk";
 import { QUIZ_JSON_SCHEMA } from "./json-schema";
 import { validateQuiz } from "./schema";
 
@@ -85,7 +85,10 @@ export async function generateQuiz(text: string, options: QuizOptions): Promise<
     );
   }
 
-  const chunks = pickChunks(splitTextIntoChunks(source));
+  // On n'envoie que ce qu'il faut de cours pour le nombre de questions
+  // demandé : un QCM de 5 questions ne doit pas coûter autant qu'un de 30.
+  const all = splitTextIntoChunks(source);
+  const chunks = pickChunks(all, chunkCountFor(options.numQuestions, all.length));
   const allocation = distributeQuestions(options.numQuestions, chunks.length);
 
   const questions: Quiz["questions"] = [];

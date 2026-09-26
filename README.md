@@ -253,10 +253,18 @@ une et signalées, plutôt que de faire échouer tout le QCM.
 **Le texte reçu du navigateur est revalidé côté serveur** (longueur, nombre de
 pages, taille maximale) avant d'être enregistré.
 
-**Cours longs.** `splitTextIntoChunks` découpe le texte aux frontières de
-paragraphes ; les questions sont réparties sur au plus 6 morceaux couvrant le
-début, le milieu et la fin du cours, puis dédupliquées. Pas de base vectorielle
-ni d'embeddings.
+**Cours longs, et économie de jetons.** `splitTextIntoChunks` découpe le texte
+aux frontières de paragraphes. Le nombre de morceaux envoyés au modèle suit le
+nombre de questions demandé (environ 8 questions par morceau, 6 morceaux au
+maximum) : un QCM de 5 questions ne coûte donc pas autant qu'un de 30. Les
+morceaux sont répartis sur tout le cours, et tirés au hasard à l'intérieur de
+leur tranche, de sorte que deux QCM successifs portent sur des passages
+différents. Pas de base vectorielle ni d'embeddings.
+
+**Requêtes de liste allégées.** Le texte intégral d'un cours et le JSON complet
+d'un QCM ne sont chargés que lorsqu'ils servent. Les listes du tableau de bord
+ne récupèrent que les colonnes affichées, et comptent les questions avec
+`jsonb_array_length` plutôt qu'en rapatriant le document.
 
 **Pages sources.** L'extraction insère des marqueurs `[[page:N]]` dans le texte
 envoyé au modèle, ce qui lui permet de citer la page d'origine de chaque

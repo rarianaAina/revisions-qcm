@@ -76,9 +76,12 @@ interface CourseRow extends Record<string, unknown> {
   quiz_count: string; // COUNT() revient en chaîne avec le driver pg
 }
 
-const COURSE_SELECT = `
-  SELECT c.*, (SELECT COUNT(*) FROM quizzes q WHERE q.course_id = c.id) AS quiz_count
-  FROM courses c
+// La colonne `text` pèse jusqu'à plus d'un mégaoctet par cours : on ne la
+// tire que lorsqu'on a réellement besoin du contenu (getCourse), jamais pour
+// afficher une liste.
+const COURSE_COLUMNS = `
+  c.id, c.name, c.file_name, c.num_pages, c.num_chars, c.created_at,
+  (SELECT COUNT(*) FROM quizzes q WHERE q.course_id = c.id) AS quiz_count
 `;
 
 function toCourseSummary(row: CourseRow): CourseSummary {
@@ -112,12 +115,17 @@ export async function createCourse(input: {
 }
 
 export async function listCourses(): Promise<CourseSummary[]> {
-  const rows = await query<CourseRow>(`${COURSE_SELECT} ORDER BY c.created_at DESC`);
+  const rows = await query<CourseRow>(
+    `SELECT ${COURSE_COLUMNS} FROM courses c ORDER BY c.created_at DESC`,
+  );
   return rows.map(toCourseSummary);
 }
 
 export async function getCourse(id: string): Promise<Course | null> {
-  const rows = await query<CourseRow>(`${COURSE_SELECT} WHERE c.id = $1`, [id]);
+  const rows = await query<CourseRow>(
+    `SELECT ${COURSE_COLUMNS}, c.text FROM courses c WHERE c.id = $1`,
+    [id],
+  );
   if (rows.length === 0) return null;
   return { ...toCourseSummary(rows[0]), text: rows[0].text };
 }
@@ -138,18 +146,23 @@ interface QuizRow extends Record<string, unknown> {
   question_type: string;
   mode: string;
   time_limit_minutes: number | null;
-  data: Quiz; // colonne JSONB : déjà désérialisée par le driver
   created_at: Date;
   attempt_count: string;
   best_score: number | null;
+  num_questions: number;
+  data?: Quiz; // colonne JSONB, chargée seulement par getQuiz
 }
 
-const QUIZ_SELECT = `
-  SELECT q.*, c.name AS course_name,
-         (SELECT COUNT(*) FROM attempts a WHERE a.quiz_id = q.id) AS attempt_count,
-         (SELECT MAX(a.percentage) FROM attempts a WHERE a.quiz_id = q.id) AS best_score
-  FROM quizzes q JOIN courses c ON c.id = q.course_id
+// `data` contient tout le QCM : pour une liste, seul le nombre de questions
+// est utile, et Postgres sait le compter sans nous renvoyer le document.
+const QUIZ_COLUMNS = `
+  q.id, q.course_id, q.title, q.difficulty, q.question_type, q.mode,
+  q.time_limit_minutes, q.created_at, c.name AS course_name,
+  jsonb_array_length(q.data -> 'questions') AS num_questions,
+  (SELECT COUNT(*) FROM attempts a WHERE a.quiz_id = q.id) AS attempt_count,
+  (SELECT MAX(a.percentage) FROM attempts a WHERE a.quiz_id = q.id) AS best_score
 `;
+const QUIZ_FROM = "FROM quizzes q JOIN courses c ON c.id = q.course_id";
 
 function toQuizSummary(row: QuizRow): QuizSummary {
   return {
@@ -157,7 +170,7 @@ function toQuizSummary(row: QuizRow): QuizSummary {
     courseId: row.course_id,
     courseName: row.course_name,
     title: row.title,
-    numQuestions: row.data.questions.length,
+    numQuestions: row.num_questions,
     mode: row.mode as QuizMode,
     difficulty: row.difficulty as Difficulty,
     createdAt: iso(row.created_at),
@@ -203,16 +216,20 @@ export async function deleteQuiz(id: string): Promise<boolean> {
 
 export async function listQuizzes(courseId?: string): Promise<QuizSummary[]> {
   const rows = courseId
-    ? await query<QuizRow>(`${QUIZ_SELECT} WHERE q.course_id = $1 ORDER BY q.created_at DESC`, [
-        courseId,
-      ])
-    : await query<QuizRow>(`${QUIZ_SELECT} ORDER BY q.created_at DESC`);
+    ? await query<QuizRow>(
+        `SELECT ${QUIZ_COLUMNS} ${QUIZ_FROM} WHERE q.course_id = $1 ORDER BY q.created_at DESC`,
+        [courseId],
+      )
+    : await query<QuizRow>(`SELECT ${QUIZ_COLUMNS} ${QUIZ_FROM} ORDER BY q.created_at DESC`);
   return rows.map(toQuizSummary);
 }
 
 export async function getQuiz(id: string): Promise<StoredQuiz | null> {
-  const rows = await query<QuizRow>(`${QUIZ_SELECT} WHERE q.id = $1`, [id]);
-  if (rows.length === 0) return null;
+  const rows = await query<QuizRow>(
+    `SELECT ${QUIZ_COLUMNS}, q.data ${QUIZ_FROM} WHERE q.id = $1`,
+    [id],
+  );
+  if (rows.length === 0 || !rows[0].data) return null;
   return {
     ...toQuizSummary(rows[0]),
     quiz: rows[0].data,
