@@ -1,8 +1,9 @@
 import { RotateCw } from "lucide-react";
 import Link from "next/link";
-import { DeleteQuizButton } from "@/components/delete-quiz-button";
+import { DeleteButton } from "@/components/delete-button";
 import { DIFFICULTY_LABELS, type QuizSummary } from "@/types/quiz";
 import { formatDate } from "@/lib/utils/format";
+import { quizDeleteQuestion } from "@/lib/utils/confirm";
 
 /** Une ligne de QCM, partagée par le tableau de bord et la page d'un cours. */
 export function QuizListItem({ quiz }: { quiz: QuizSummary }) {
@@ -41,10 +42,10 @@ export function QuizListItem({ quiz }: { quiz: QuizSummary }) {
           {quiz.attemptCount > 0 ? "Refaire" : "Commencer"}
         </Link>
 
-        <DeleteQuizButton
-          quizId={quiz.id}
-          title={quiz.title}
-          attemptCount={quiz.attemptCount}
+        <DeleteButton
+          endpoint={`/api/quizzes/${quiz.id}`}
+          ariaLabel={`Supprimer le QCM « ${quiz.title} »`}
+          question={quizDeleteQuestion(quiz.attemptCount)}
         />
       </div>
     </li>

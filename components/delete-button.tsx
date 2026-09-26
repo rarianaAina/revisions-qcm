@@ -7,18 +7,27 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils/cn";
 
 /**
- * Suppression d'un QCM. L'action est irréversible et emporte l'historique des
- * scores : on demande donc une confirmation explicite, en deux temps plutôt
- * qu'avec une boîte de dialogue du navigateur.
+ * Suppression d'une ressource, avec confirmation en deux temps.
+ *
+ * Les suppressions sont irréversibles et cascadent (un QCM emporte ses
+ * essais, un cours emporte ses QCM) : la question posée doit énoncer
+ * exactement ce qui disparaît.
  */
-export function DeleteQuizButton({
-  quizId,
-  title,
-  attemptCount,
+export function DeleteButton({
+  endpoint,
+  ariaLabel,
+  question,
+  redirectTo,
+  className,
 }: {
-  quizId: string;
-  title: string;
-  attemptCount: number;
+  /** Route appelée en DELETE. */
+  endpoint: string;
+  ariaLabel: string;
+  /** Question de confirmation, qui doit énoncer ce qui sera supprimé. */
+  question: string;
+  /** Page vers laquelle partir après coup, quand la page courante disparaît. */
+  redirectTo?: string;
+  className?: string;
 }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
@@ -30,7 +39,7 @@ export function DeleteQuizButton({
     setError(null);
 
     try {
-      const response = await fetch(`/api/quizzes/${quizId}`, { method: "DELETE" });
+      const response = await fetch(endpoint, { method: "DELETE" });
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as
           | { error?: { message: string } }
@@ -39,7 +48,9 @@ export function DeleteQuizButton({
         setDeleting(false);
         return;
       }
+
       // Les pages lisent la base côté serveur : on les fait recalculer.
+      if (redirectTo) router.push(redirectTo);
       router.refresh();
     } catch {
       setError("Connexion au serveur impossible.");
@@ -63,9 +74,13 @@ export function DeleteQuizButton({
       <button
         type="button"
         onClick={() => setConfirming(true)}
-        aria-label={`Supprimer le QCM « ${title} »`}
-        title="Supprimer ce QCM"
-        className="rounded-lg border border-line p-2 text-muted transition-colors hover:border-danger/40 hover:bg-danger-soft hover:text-danger"
+        aria-label={ariaLabel}
+        title={ariaLabel}
+        className={cn(
+          "rounded-lg border border-line p-2 text-muted transition-colors",
+          "hover:border-danger/40 hover:bg-danger-soft hover:text-danger",
+          className,
+        )}
       >
         <Trash2 className="size-3.5" />
       </button>
@@ -73,14 +88,8 @@ export function DeleteQuizButton({
   }
 
   return (
-    <span className="flex items-center gap-2 text-xs">
-      <span className="text-muted">
-        {attemptCount === 0
-          ? "Supprimer ce QCM ?"
-          : attemptCount === 1
-            ? "Supprimer ce QCM et son essai ?"
-            : `Supprimer ce QCM et ses ${attemptCount} essais ?`}
-      </span>
+    <span className="flex flex-wrap items-center justify-end gap-2 text-xs">
+      <span className="text-muted">{question}</span>
       <button
         type="button"
         onClick={remove}

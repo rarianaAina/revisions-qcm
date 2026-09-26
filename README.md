@@ -180,9 +180,14 @@ d'OpenAI ne demande même pas de nouveau fichier : réutilisez
 6. **Refaire** le même QCM ou en **générer un nouveau** depuis le même cours.
 
 Le tableau de bord présente les QCM **regroupés sous le cours** dont ils sont
-issus. Chaque QCM peut être supprimé depuis cette liste ou depuis la page du
-cours ; la suppression demande une confirmation et emporte l'historique des
-scores de ce QCM. Le cours, lui, n'est pas touché.
+issus. QCM et cours peuvent être supprimés, depuis le tableau de bord comme
+depuis la page d'un cours.
+
+Toute suppression demande une confirmation, et la question posée énonce
+exactement ce qui disparaît, puisque la suppression cascade :
+
+- supprimer un QCM emporte ses essais, mais pas le cours ;
+- supprimer un cours emporte ses QCM **et** tous leurs essais.
 
 ### PDF scannés
 

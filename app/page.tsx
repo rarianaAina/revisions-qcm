@@ -1,11 +1,13 @@
 import { BookOpen, FileText, Plus, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { DeleteButton } from "@/components/delete-button";
 import { QuizListItem } from "@/components/quiz-list-item";
 import { Alert } from "@/components/ui/alert";
 import { Card, CardTitle } from "@/components/ui/card";
 import { databaseReady, listCourses, listQuizzes } from "@/lib/db";
 import { getLLMStatus } from "@/lib/llm";
 import { formatDate } from "@/lib/utils/format";
+import { courseDeleteQuestion } from "@/lib/utils/confirm";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +78,7 @@ export default async function DashboardPage() {
           <ul className="space-y-4">
             {courses.map((course) => {
               const courseQuizzes = byCourse.get(course.id) ?? [];
+              const attempts = courseQuizzes.reduce((n, q) => n + q.attemptCount, 0);
 
               return (
                 <li key={course.id}>
@@ -94,12 +97,19 @@ export default async function DashboardPage() {
                         </p>
                       </div>
 
-                      <Link
-                        href={`/courses/${course.id}`}
-                        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs font-medium transition-colors hover:bg-accent-soft hover:text-accent"
-                      >
-                        <Sparkles className="size-3.5" /> Nouveau QCM
-                      </Link>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Link
+                          href={`/courses/${course.id}`}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs font-medium transition-colors hover:bg-accent-soft hover:text-accent"
+                        >
+                          <Sparkles className="size-3.5" /> Nouveau QCM
+                        </Link>
+                        <DeleteButton
+                          endpoint={`/api/courses/${course.id}`}
+                          ariaLabel={`Supprimer le cours « ${course.name} »`}
+                          question={courseDeleteQuestion(courseQuizzes.length, attempts)}
+                        />
+                      </div>
                     </div>
 
                     {courseQuizzes.length === 0 ? (

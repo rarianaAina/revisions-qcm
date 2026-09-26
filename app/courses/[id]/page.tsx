@@ -1,11 +1,13 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DeleteButton } from "@/components/delete-button";
 import { QuizConfig } from "@/components/quiz-config";
 import { QuizListItem } from "@/components/quiz-list-item";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getCourse, listQuizzes } from "@/lib/db";
 import { getLLMStatus } from "@/lib/llm";
+import { courseDeleteQuestion } from "@/lib/utils/confirm";
 import { formatDate } from "@/lib/utils/format";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +20,7 @@ export default async function CoursePage({ params }: { params: Promise<{ id: str
   const quizzes = await listQuizzes(id);
   const llm = getLLMStatus();
   const preview = course.text.replace(/\[\[page:\d+\]\]\n?/g, "").slice(0, 1200);
+  const attemptTotal = quizzes.reduce((n, q) => n + q.attemptCount, 0);
 
   return (
     <div className="space-y-6">
@@ -25,13 +28,23 @@ export default async function CoursePage({ params }: { params: Promise<{ id: str
         <ArrowLeft className="size-4" /> Tableau de bord
       </Link>
 
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
         <h1 className="text-2xl font-semibold">{course.name}</h1>
         <p className="mt-1 text-sm text-muted">
           {course.fileName} · {course.numPages} page{course.numPages > 1 ? "s" : ""} ·{" "}
           {course.numChars.toLocaleString("fr-FR")} caractères · importé le{" "}
           {formatDate(course.createdAt)}
         </p>
+        </div>
+
+        {/* La page disparaît avec le cours : on repart au tableau de bord. */}
+        <DeleteButton
+          endpoint={`/api/courses/${course.id}`}
+          ariaLabel={`Supprimer le cours « ${course.name} »`}
+          question={courseDeleteQuestion(quizzes.length, attemptTotal)}
+          redirectTo="/"
+        />
       </div>
 
       <Card>
