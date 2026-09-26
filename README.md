@@ -1,36 +1,235 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Révisions — générateur de QCM à partir de cours PDF
 
-## Getting Started
+Application web personnelle : importez le PDF d'un cours, l'application en
+extrait le texte et génère des QCM auxquels vous répondez, avec correction
+automatique, score et explications.
 
-First, run the development server:
+Usage mono-utilisatrice : pas de comptes, pas d'abonnement. Conçue pour être
+déployée sur **Vercel**, avec une base Postgres gérée et une API LLM gratuite.
+
+---
+
+## 1. Installation
+
+Prérequis : **Node.js 20+**.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Il n'y a rien d'autre à installer : l'extraction des PDF se fait dans le
+navigateur, il n'y a aucun service séparé à lancer.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 2. Configuration
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env.local
+```
 
-## Learn More
+Deux variables sont obligatoires : `DATABASE_URL` et une clé d'API LLM.
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `DATABASE_URL` | URL de connexion Postgres | — (obligatoire) |
+| `GEMINI_API_KEY` | clé Google AI Studio, **gratuite** | — |
+| `GROQ_API_KEY` | clé Groq, **gratuite** | — |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | alternatives payantes | — |
+| `LLM_PROVIDER` | `gemini`, `groq`, `openai`, `anthropic`, `ollama` | détection automatique |
+| `LLM_MODEL` | modèle à utiliser | dépend du fournisseur |
+| `LLM_BASE_URL` | pour viser un proxy ou une passerelle compatible | API officielle |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Les clés ne sont lues que côté serveur et ne sont jamais transmises au
+navigateur.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Base de données
 
-## Deploy on Vercel
+N'importe quel Postgres convient. Deux options gratuites :
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- **Supabase** — créez un projet, puis *Project Settings → Database →
+  Connection string → Transaction pooler*.
+- **Neon** — créez un projet, copiez la *Connection string* (intégration
+  disponible depuis le tableau de bord Vercel).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Une fois `DATABASE_URL` renseignée, créez les tables :
+
+```bash
+npm run db:setup
+```
+
+Cette commande est idempotente : vous pouvez la relancer sans risque.
+
+### Fournisseur LLM
+
+**Si aucune clé n'est configurée, l'interface l'indique explicitement et le
+bouton de génération reste désactivé.**
+
+L'option recommandée est **Gemini**, gratuite et sans carte bancaire :
+créez une clé sur [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+et renseignez `GEMINI_API_KEY`. Le modèle par défaut est `gemini-3.8-flash`.
+
+**Groq** est une seconde option gratuite, très rapide
+([console.groq.com/keys](https://console.groq.com/keys), modèle par défaut
+`openai/gpt-oss-120b`). OpenAI et Anthropic restent disponibles si vous
+préférez une offre payante.
+
+Quand plusieurs clés sont présentes, l'ordre de détection est : Gemini, Groq,
+OpenAI, Anthropic. `LLM_PROVIDER` force explicitement le choix.
+
+## 3. Lancer l'application
+
+```bash
+npm run dev     # http://localhost:3000
+```
+
+Le tableau de bord signale immédiatement si la base ou le fournisseur LLM ne
+sont pas configurés.
+
+## 4. Déployer sur Vercel
+
+1. Poussez le dépôt sur GitHub et importez-le depuis le tableau de bord Vercel.
+2. Dans *Settings → Environment Variables*, ajoutez `DATABASE_URL` et
+   `GEMINI_API_KEY` (plus `LLM_PROVIDER` / `LLM_MODEL` si vous voulez forcer un
+   autre fournisseur).
+3. Déployez.
+4. Appliquez le schéma une fois sur la base de production :
+   ```bash
+   DATABASE_URL="<url de production>" npm run db:setup
+   ```
+
+Aucune configuration particulière n'est nécessaire : l'application est une
+application Next.js standard.
+
+### Contraintes de la plateforme prises en compte
+
+- **Corps de requête limité à 4,5 Mo.** Le PDF n'est jamais envoyé au serveur :
+  il est lu dans le navigateur et seul le texte extrait transite. Un cours de
+  200 pages passe donc sans difficulté.
+- **Système de fichiers en lecture seule.** Toute la persistance est en
+  Postgres, aucun fichier n'est écrit.
+- **Durée maximale d'une fonction : 300 s** (plan Hobby). La route de
+  génération déclare `maxDuration = 300`. Un QCM de 30 questions sur un cours
+  long enchaîne jusqu'à 6 appels au modèle ; si vous approchez de la limite,
+  réduisez le nombre de questions.
+
+## 5. Ajouter un fournisseur LLM
+
+1. Créez `lib/llm/providers/mon-fournisseur.ts` exportant une fonction qui
+   renvoie un objet `LLMProvider` (interface dans `lib/llm/types.ts`).
+2. Ajoutez son identifiant dans `ProviderId` et une entrée dans le `switch` de
+   `lib/llm/index.ts`.
+
+Aucun autre fichier n'a besoin d'être modifié : le reste de l'application ne
+connaît que l'interface. Un service exposant l'API « chat completions »
+d'OpenAI ne demande même pas de nouveau fichier : réutilisez
+`createOpenAICompatibleProvider` avec la bonne `baseURL`.
+
+## 6. Utilisation
+
+1. **Nouveau QCM** — déposez le PDF du cours (25 Mo maximum).
+2. Le texte est extrait dans le navigateur, page par page, avec une barre de
+   progression, puis un aperçu s'affiche.
+3. **Configurez** : nombre de questions (5, 10, 20, 30 ou personnalisé),
+   difficulté (facile / moyen / difficile / mixte), type (réponse unique,
+   réponses multiples, mélange) et mode (classique ou examen chronométré).
+4. **Répondez** : navigation avant/arrière, réponses conservées, barre de
+   progression, accès direct à n'importe quelle question.
+5. **Corrigez** : score en pourcentage, nombre de bonnes et mauvaises réponses,
+   temps écoulé en mode examen, puis pour chaque question votre réponse, la
+   bonne réponse, l'explication et la page source du cours.
+6. **Refaire** le même QCM ou en **générer un nouveau** depuis le même cours.
+
+### PDF scannés
+
+Si le PDF ne contient pas de texte sélectionnable (document photographié ou
+scanné), l'import est refusé avec un message explicite : la reconnaissance de
+caractères (OCR) n'est pas incluse dans cette version.
+
+## 7. Architecture
+
+```
+app/
+  page.tsx                 tableau de bord (cours, QCM, scores)
+  courses/new/             import d'un PDF puis configuration
+  courses/[id]/            détail d'un cours + génération d'un nouveau QCM
+  quiz/[id]/               passation du QCM
+  results/[id]/            score et correction détaillée
+  api/
+    courses/               enregistrement du texte extrait, liste, suppression
+    quizzes/               génération et lecture d'un QCM
+    attempts/              soumission et résultat corrigé
+    status/                diagnostic (base de données + fournisseur LLM)
+
+components/
+  pdf-upload.tsx           dépôt, extraction locale, progression, erreurs
+  quiz-config.tsx          choix du format du QCM
+  quiz-question.tsx        une question et ses propositions
+  quiz-runner.tsx          navigation, chronomètre, soumission
+  quiz-result.tsx          score et correction
+  progress-bar.tsx         barre de progression
+  theme-toggle.tsx         mode clair / sombre
+  ui/                      boutons, cartes, alertes, indicateur de chargement
+
+lib/
+  pdf/extract.ts           extraction pdf.js, dans le navigateur
+  llm/                     abstraction du fournisseur + prompt système
+    providers/             gemini, openai-compatible (OpenAI/Groq), anthropic, ollama
+  quiz/
+    schema.ts              validation Zod + règles métier
+    chunk.ts               découpage des cours longs
+    generate.ts            orchestration de la génération
+    grade.ts               correction
+  db/
+    index.ts               accès Postgres
+    schema.sql             schéma, appliqué par npm run db:setup
+  utils/                   formatage, classes CSS
+
+scripts/db-setup.mjs       création des tables
+types/quiz.ts              types partagés
+```
+
+### Choix techniques
+
+**L'extraction se fait dans le navigateur.** pdf.js lit le PDF localement ;
+seul le texte part vers le serveur. Cela contourne la limite de 4,5 Mo de
+Vercel, évite d'héberger un service d'extraction, et le fichier de cours ne
+quitte jamais l'appareil.
+
+**Les bonnes réponses ne quittent jamais le serveur pendant la passation.**
+La page du QCM ne reçoit que les énoncés, les propositions et le nombre de
+réponses attendues. La correction est faite côté serveur à la soumission.
+
+**Validation systématique de la sortie du modèle.** Le JSON renvoyé par le LLM
+est validé par Zod puis par des règles métier (4 propositions A–D, pas de
+doublon, une seule bonne réponse en mode « réponse unique », au moins deux en
+mode « réponses multiples »). Les questions non conformes sont écartées une par
+une et signalées, plutôt que de faire échouer tout le QCM.
+
+**Le texte reçu du navigateur est revalidé côté serveur** (longueur, nombre de
+pages, taille maximale) avant d'être enregistré.
+
+**Cours longs.** `splitTextIntoChunks` découpe le texte aux frontières de
+paragraphes ; les questions sont réparties sur au plus 6 morceaux couvrant le
+début, le milieu et la fin du cours, puis dédupliquées. Pas de base vectorielle
+ni d'embeddings.
+
+**Pages sources.** L'extraction insère des marqueurs `[[page:N]]` dans le texte
+envoyé au modèle, ce qui lui permet de citer la page d'origine de chaque
+question. Ces marqueurs sont retirés des aperçus affichés.
+
+## 8. Vérifications
+
+```bash
+npm run typecheck   # TypeScript strict
+npm run lint        # ESLint
+npm run build       # build de production
+```
+
+## 9. Limites connues
+
+- Pas d'OCR : les PDF scannés sont refusés.
+- La qualité des questions dépend directement du modèle choisi ; les offres
+  gratuites imposent des quotas (requêtes par minute et par jour).
+- Un seul QCM est généré à la fois ; 30 questions sur un cours long peuvent
+  prendre une à deux minutes.
+- L'extraction mobilise le navigateur : sur un très gros PDF et un téléphone
+  ancien, comptez quelques dizaines de secondes.

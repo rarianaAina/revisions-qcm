@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Le driver Postgres est natif côté Node : il ne doit pas être empaqueté.
+  serverExternalPackages: ["pg"],
 };
 
 export default nextConfig;
