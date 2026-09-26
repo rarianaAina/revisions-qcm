@@ -179,6 +179,11 @@ d'OpenAI ne demande même pas de nouveau fichier : réutilisez
    bonne réponse, l'explication et la page source du cours.
 6. **Refaire** le même QCM ou en **générer un nouveau** depuis le même cours.
 
+Le tableau de bord présente les QCM **regroupés sous le cours** dont ils sont
+issus. Chaque QCM peut être supprimé depuis cette liste ou depuis la page du
+cours ; la suppression demande une confirmation et emporte l'historique des
+scores de ce QCM. Le cours, lui, n'est pas touché.
+
 ### PDF scannés
 
 Si le PDF ne contient pas de texte sélectionnable (document photographié ou

@@ -1,12 +1,12 @@
-import { ArrowLeft, RotateCw } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { QuizConfig } from "@/components/quiz-config";
+import { QuizListItem } from "@/components/quiz-list-item";
 import { Card, CardTitle } from "@/components/ui/card";
 import { getCourse, listQuizzes } from "@/lib/db";
 import { getLLMStatus } from "@/lib/llm";
 import { formatDate } from "@/lib/utils/format";
-import { DIFFICULTY_LABELS } from "@/types/quiz";
 
 export const dynamic = "force-dynamic";
 
@@ -57,35 +57,9 @@ export default async function CoursePage({ params }: { params: Promise<{ id: str
             Aucun QCM généré sur ce cours pour l&apos;instant.
           </Card>
         ) : (
-          <ul className="space-y-3">
+          <ul className="space-y-2">
             {quizzes.map((quiz) => (
-              <li key={quiz.id}>
-                <Card className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{quiz.title}</p>
-                    <p className="mt-1 text-xs text-muted">
-                      {quiz.numQuestions} question{quiz.numQuestions > 1 ? "s" : ""} ·{" "}
-                      {DIFFICULTY_LABELS[quiz.difficulty]} · {formatDate(quiz.createdAt)} ·{" "}
-                      {quiz.attemptCount} essai{quiz.attemptCount > 1 ? "s" : ""}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    {quiz.bestScore !== null && (
-                      <span className="text-sm font-semibold tabular-nums text-accent">
-                        {quiz.bestScore} %
-                      </span>
-                    )}
-                    <Link
-                      href={`/quiz/${quiz.id}`}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm font-medium transition-colors hover:bg-accent-soft hover:text-accent"
-                    >
-                      <RotateCw className="size-3.5" />
-                      {quiz.attemptCount > 0 ? "Refaire" : "Commencer"}
-                    </Link>
-                  </div>
-                </Card>
-              </li>
+              <QuizListItem key={quiz.id} quiz={quiz} />
             ))}
           </ul>
         )}

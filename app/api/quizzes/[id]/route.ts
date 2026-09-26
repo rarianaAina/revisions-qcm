@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, handleApiError } from "@/lib/api";
-import { getQuiz } from "@/lib/db";
+import { deleteQuiz, getQuiz } from "@/lib/db";
 import type { PublicQuestion } from "@/types/quiz";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +40,16 @@ export async function GET(_request: Request, { params }: Params) {
         expectedAnswers: stored.quiz.questions[i].correctAnswers.length,
       })),
     });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function DELETE(_request: Request, { params }: Params) {
+  try {
+    const { id } = await params;
+    if (!(await deleteQuiz(id))) return apiError("QCM introuvable.", "not_found", 404);
+    return NextResponse.json({ ok: true });
   } catch (error) {
     return handleApiError(error);
   }

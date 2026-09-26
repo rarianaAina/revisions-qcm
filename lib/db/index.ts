@@ -195,6 +195,12 @@ export async function createQuiz(
   return id;
 }
 
+/** Supprime un QCM. Les essais associés partent en cascade (voir schema.sql). */
+export async function deleteQuiz(id: string): Promise<boolean> {
+  const result = await pool().query("DELETE FROM quizzes WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
+}
+
 export async function listQuizzes(courseId?: string): Promise<QuizSummary[]> {
   const rows = courseId
     ? await query<QuizRow>(`${QUIZ_SELECT} WHERE q.course_id = $1 ORDER BY q.created_at DESC`, [
