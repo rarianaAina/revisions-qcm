@@ -53,6 +53,12 @@ N'importe quel Postgres convient. Deux options gratuites :
 - **Neon** — créez un projet, copiez la *Connection string* (intégration
   disponible depuis le tableau de bord Vercel).
 
+> **Sur Vercel, prenez impérativement le *Transaction pooler* (port 6543).**
+> La *Direct connection* (`db.<ref>.supabase.co`) n'est joignable qu'en IPv6,
+> sauf option IPv4 payante, alors que les fonctions Vercel sortent en IPv4 :
+> elle échouera toujours. L'application détecte ce cas et l'explique dans le
+> message d'erreur du tableau de bord.
+
 Une fois `DATABASE_URL` renseignée, créez les tables, au choix :
 
 ```bash
@@ -123,7 +129,10 @@ sont pas configurés.
    `GEMINI_API_KEY` (plus `LLM_PROVIDER` / `LLM_MODEL` si vous voulez forcer un
    autre fournisseur).
 3. Déployez.
-4. Appliquez le schéma une fois sur la base de production :
+4. **Redéployez** si vous avez ajouté les variables après le premier
+   déploiement : sur Vercel, une variable d'environnement ne s'applique qu'aux
+   déploiements suivants, jamais à ceux déjà en ligne.
+5. Appliquez le schéma une fois sur la base de production :
    ```bash
    DATABASE_URL="<url de production>" npm run db:setup
    ```

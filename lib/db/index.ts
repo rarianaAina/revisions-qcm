@@ -278,16 +278,64 @@ export async function getAttempt(
   };
 }
 
+/**
+ * La connexion directe de Supabase (db.<ref>.supabase.co) est joignable en
+ * IPv6 uniquement, sauf option IPv4 payante. Or les fonctions Vercel sortent
+ * en IPv4 : la connexion échoue systématiquement. Le pooler en mode
+ * transaction, lui, est toujours en IPv4.
+ */
+function diagnoseConnection(message: string): string | null {
+  const url = process.env.DATABASE_URL ?? "";
+  const isSupabaseDirect = /@db\.[a-z0-9]+\.supabase\.co[:/]/i.test(url);
+  const unreachable = /ENETUNREACH|EHOSTUNREACH|ENOTFOUND|ETIMEDOUT|Connection terminated|timeout/i.test(
+    message,
+  );
+
+  if (isSupabaseDirect && unreachable) {
+    return (
+      "La connexion directe Supabase (db.….supabase.co) n'est accessible qu'en IPv6, " +
+      "alors que Vercel sort en IPv4 : elle ne peut pas fonctionner ici. " +
+      "Dans Supabase, cliquez sur Connect et prenez la chaîne « Transaction pooler » " +
+      "(hôte …pooler.supabase.com, port 6543), puis redéployez."
+    );
+  }
+  if (isSupabaseDirect) {
+    return (
+      "Vous utilisez la connexion directe Supabase. Sur Vercel, préférez la chaîne " +
+      "« Transaction pooler » (port 6543). Erreur d'origine : " + message
+    );
+  }
+  return null;
+}
+
 /** Vérifie que la base est joignable et que le schéma est en place. */
 export async function databaseReady(): Promise<{ ok: boolean; message: string }> {
+  if (!process.env.DATABASE_URL?.trim()) {
+    return {
+      ok: false,
+      message:
+        "DATABASE_URL n'est pas défini. Ajoutez-le dans .env.local, ou dans les variables d'environnement Vercel puis redéployez (les variables ne s'appliquent qu'aux nouveaux déploiements).",
+    };
+  }
+
   try {
     await query("SELECT 1 FROM courses LIMIT 1");
     return { ok: true, message: "Base de données connectée." };
   } catch (error) {
     const message = error instanceof Error ? error.message : "erreur inconnue";
+
     if (/relation .* does not exist/i.test(message)) {
       return { ok: false, message: "Le schéma n'est pas créé. Lancez : npm run db:setup" };
     }
-    return { ok: false, message: `Base de données injoignable : ${message}` };
+    if (/password authentication failed|SASL|SCRAM/i.test(message)) {
+      return {
+        ok: false,
+        message:
+          "Mot de passe refusé. Dans la chaîne de connexion, [YOUR-PASSWORD] doit être remplacé par le mot de passe de la base (Project Settings > Database).",
+      };
+    }
+
+    const hint = diagnoseConnection(message);
+    return { ok: false, message: hint ?? `Base de données injoignable : ${message}` };
   }
 }
