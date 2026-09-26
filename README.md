@@ -50,13 +50,20 @@ N'importe quel Postgres convient. Deux options gratuites :
 - **Neon** — créez un projet, copiez la *Connection string* (intégration
   disponible depuis le tableau de bord Vercel).
 
-Une fois `DATABASE_URL` renseignée, créez les tables :
+Une fois `DATABASE_URL` renseignée, créez les tables, au choix :
 
 ```bash
 npm run db:setup
 ```
 
-Cette commande est idempotente : vous pouvez la relancer sans risque.
+ou, sur Supabase, en collant le contenu de [`lib/db/schema.sql`](lib/db/schema.sql)
+dans *SQL Editor → New query → Run*. Les deux voies appliquent exactement le
+même script, idempotent : vous pouvez le relancer sans risque.
+
+Le script active `ROW LEVEL SECURITY` sans aucune policy sur les trois tables.
+Sur Supabase, cela coupe l'accès par l'API REST publique (clé `anon`), que
+l'application n'utilise pas : elle se connecte directement en Postgres avec
+`DATABASE_URL`, et le propriétaire des tables n'est pas soumis au RLS.
 
 ### Fournisseur LLM
 

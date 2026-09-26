@@ -1,5 +1,14 @@
--- Schéma Postgres. Idempotent : exécutable autant de fois que nécessaire.
--- Appliqué par « npm run db:setup ».
+-- =====================================================================
+-- Révisions — schéma Postgres.
+--
+-- Deux façons de l'appliquer, au choix :
+--   * npm run db:setup
+--   * copier-coller dans Supabase : SQL Editor > New query > Run
+--
+-- Idempotent : réexécutable sans risque.
+-- =====================================================================
+
+-- ---------- Tables ----------
 
 CREATE TABLE IF NOT EXISTS courses (
   id         TEXT PRIMARY KEY,
@@ -35,4 +44,34 @@ CREATE TABLE IF NOT EXISTS attempts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_quizzes_course ON quizzes(course_id);
-CREATE INDEX IF NOT EXISTS idx_attempts_quiz ON attempts(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_quiz  ON attempts(quiz_id);
+
+-- ---------- Verrouillage de l'API publique ----------
+--
+-- Supabase expose automatiquement le schéma « public » via une API REST
+-- accessible avec la clé « anon », qui est publique par nature.
+-- L'application n'utilise PAS cette API : elle se connecte directement en
+-- Postgres avec DATABASE_URL. On coupe donc totalement l'accès REST.
+--
+-- RLS activé SANS aucune policy = personne ne passe par l'API REST.
+-- Le rôle « postgres » de DATABASE_URL est propriétaire des tables : sous
+-- Postgres, le propriétaire n'est pas soumis à RLS (sauf FORCE ROW LEVEL
+-- SECURITY, que l'on n'active pas). L'application continue donc de
+-- fonctionner normalement.
+
+ALTER TABLE courses  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quizzes  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attempts ENABLE ROW LEVEL SECURITY;
+
+-- Ceinture et bretelles : on retire aussi les droits accordés par défaut
+-- aux rôles de l'API REST. Le test d'existence permet d'exécuter le même
+-- script sur un Postgres ordinaire, où ces rôles n'existent pas.
+DO $$
+DECLARE r TEXT;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('REVOKE ALL ON courses, quizzes, attempts FROM %I', r);
+    END IF;
+  END LOOP;
+END $$;
