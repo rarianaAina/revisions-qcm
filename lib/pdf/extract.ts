@@ -10,6 +10,7 @@
  */
 
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
+import { apisComblees, installPdfPolyfills } from "./polyfills";
 
 /** Taille maximale acceptée (le PDF reste local, c'est une limite de confort). */
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -90,12 +91,17 @@ async function assertPdfSignature(file: File): Promise<void> {
 
 /** Charge pdf.js à la demande : la bibliothèque ne pèse sur aucune autre page. */
 async function loadPdfJs() {
-  const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
-  return pdfjs;
+  installPdfPolyfills();
+  return import("pdfjs-dist");
+}
+
+/**
+ * Worker de pdf.js, lancé depuis notre propre point d'entrée pour qu'il
+ * installe les correctifs avant de se charger. Le worker a son propre
+ * contexte : ceux de la page ne l'atteignent pas.
+ */
+function creerWorker(): Worker {
+  return new Worker(new URL("./pdf-worker-entry.ts", import.meta.url), { type: "module" });
 }
 
 /**
@@ -150,13 +156,20 @@ export async function extractPdf(file: File, options: ExtractOptions = {}): Prom
   const data = new Uint8Array(await file.arrayBuffer());
 
   // La tâche de chargement possède le worker : c'est elle qu'il faut libérer.
-  const loadingTask = pdfjs.getDocument({ data, ...PDFJS_RESOURCES });
+  const worker = creerWorker();
+  const loadingTask = pdfjs.getDocument({
+    data,
+    // `create` porte la bonne signature ; le constructeur est mal typé en amont.
+    worker: pdfjs.PDFWorker.create({ port: worker }),
+    ...PDFJS_RESOURCES,
+  });
 
   let doc;
   try {
     doc = await loadingTask.promise;
   } catch (cause) {
     await loadingTask.destroy().catch(() => {});
+    worker.terminate();
     if (cause instanceof Error && cause.name === "PasswordException") {
       throw new ExtractionError("encrypted_pdf", "Ce PDF est protégé par un mot de passe.");
     }
@@ -223,9 +236,13 @@ export async function extractPdf(file: File, options: ExtractOptions = {}): Prom
       // La plupart des pages ont planté : ce n'est pas un scan, c'est un
       // problème de lecture, et le dire évite une fausse piste.
       if (echecs.length > numPages / 2) {
+        const anciennes = apisComblees();
         throw new ExtractionError(
           "extraction_failed",
-          `La lecture de ce PDF a échoué sur ${echecs.length} page(s) sur ${numPages}. Détail : ${echecs[0]}.`,
+          `La lecture de ce PDF a échoué sur ${echecs.length} page(s) sur ${numPages}. Détail : ${echecs[0]}.` +
+            (anciennes.length > 0
+              ? ` Votre navigateur est ancien (${anciennes.join(", ")} manquant) : le mettre à jour, ou essayer depuis un autre appareil, réglera probablement le problème.`
+              : ""),
         );
       }
 
@@ -262,5 +279,6 @@ export async function extractPdf(file: File, options: ExtractOptions = {}): Prom
     };
   } finally {
     await loadingTask.destroy().catch(() => {});
+    worker.terminate();
   }
 }

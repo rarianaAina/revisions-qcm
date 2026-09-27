@@ -209,6 +209,15 @@ InDesign. `npm run pdfjs:assets`, déclenché automatiquement avant `dev` et
 `build`, les copie de `node_modules` vers `public/pdfjs`. Sans elles, ces
 documents rendraient un texte vide et seraient pris à tort pour des scans.
 
+### Navigateurs anciens
+
+pdf.js appelle des API récentes, dont `Promise.withResolvers`, qui demande
+Safari 17.4 : sur un iPhone plus ancien la lecture échoue sur chaque page.
+`lib/pdf/polyfills.ts` comble ces API lorsqu'elles manquent, et
+`lib/pdf/pdf-worker-entry.ts` les installe **aussi dans le worker**, qui a son
+propre contexte JavaScript et n'hérite pas de celui de la page. C'est pourquoi
+le worker est lancé depuis ce point d'entrée plutôt que par `workerSrc`.
+
 ## 7. Architecture
 
 ```
