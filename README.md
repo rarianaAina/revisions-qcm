@@ -189,11 +189,25 @@ exactement ce qui disparaît, puisque la suppression cascade :
 - supprimer un QCM emporte ses essais, mais pas le cours ;
 - supprimer un cours emporte ses QCM **et** tous leurs essais.
 
-### PDF scannés
+### PDF sans texte sélectionnable
 
-Si le PDF ne contient pas de texte sélectionnable (document photographié ou
-scanné), l'import est refusé avec un message explicite : la reconnaissance de
-caractères (OCR) n'est pas incluse dans cette version.
+Si le PDF ne contient pas de texte, l'import est refusé. Le message distingue
+trois situations, car elles n'appellent pas la même réponse :
+
+- **les pages sont des images** (cours photographié, scanné, ou composé de
+  captures d'écran) : le message le dit et donne le décompte des pages
+  concernées. Il faudra une OCR, non incluse dans cette version ;
+- **la lecture a échoué** sur la majorité des pages : ce n'est pas un scan mais
+  un problème technique, et le message rapporte l'erreur rencontrée ;
+- **aucun texte trouvé sans image détectée** : le message invite à le signaler,
+  puisque le document semble alors lisible.
+
+pdf.js a besoin de tables de correspondance (`cmaps`) et des polices
+PostScript de base pour lire les PDF dont les polices sont encodées en
+Identity-H ou non embarquées — ceux que produisent Word, Google Docs ou
+InDesign. `npm run pdfjs:assets`, déclenché automatiquement avant `dev` et
+`build`, les copie de `node_modules` vers `public/pdfjs`. Sans elles, ces
+documents rendraient un texte vide et seraient pris à tort pour des scans.
 
 ## 7. Architecture
 

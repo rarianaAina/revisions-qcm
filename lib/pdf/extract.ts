@@ -32,6 +32,7 @@ export type ExtractionCode =
   | "empty_pdf"
   | "too_many_pages"
   | "needs_ocr"
+  | "extraction_failed"
   | "text_too_large";
 
 export class ExtractionError extends Error {
@@ -97,6 +98,36 @@ async function loadPdfJs() {
   return pdfjs;
 }
 
+/**
+ * Ressources servies depuis public/pdfjs (voir scripts/copy-pdfjs-assets.mjs).
+ * Sans elles, un PDF dont les polices sont encodées en Identity-H, ou qui ne
+ * embarque pas ses polices, rend un texte vide : l'application conclurait à
+ * tort qu'il s'agit d'un document scanné.
+ */
+const PDFJS_RESOURCES = {
+  cMapUrl: "/pdfjs/cmaps/",
+  cMapPacked: true,
+  standardFontDataUrl: "/pdfjs/standard_fonts/",
+} as const;
+
+type PdfJs = Awaited<ReturnType<typeof loadPdfJs>>;
+type PdfPage = Awaited<ReturnType<Awaited<ReturnType<PdfJs["getDocument"]>["promise"]>["getPage"]>>;
+
+/** La page dessine-t-elle au moins une image ? (cours scanné ou photographié) */
+async function pageContientUneImage(page: PdfPage, pdfjs: PdfJs): Promise<boolean> {
+  try {
+    const { fnArray } = await page.getOperatorList();
+    const opsImage = new Set<number>([
+      pdfjs.OPS.paintImageXObject,
+      pdfjs.OPS.paintInlineImageXObject,
+      pdfjs.OPS.paintImageMaskXObject,
+    ]);
+    return fnArray.some((op: number) => opsImage.has(op));
+  } catch {
+    return false; // la détection est un confort : son échec ne doit rien casser
+  }
+}
+
 export interface ExtractOptions {
   /** Appelé après chaque page, pour l'affichage de la progression. */
   onProgress?: (done: number, total: number) => void;
@@ -119,7 +150,7 @@ export async function extractPdf(file: File, options: ExtractOptions = {}): Prom
   const data = new Uint8Array(await file.arrayBuffer());
 
   // La tâche de chargement possède le worker : c'est elle qu'il faut libérer.
-  const loadingTask = pdfjs.getDocument({ data });
+  const loadingTask = pdfjs.getDocument({ data, ...PDFJS_RESOURCES });
 
   let doc;
   try {
@@ -148,9 +179,14 @@ export async function extractPdf(file: File, options: ExtractOptions = {}): Prom
     }
 
     const pages: ExtractedPage[] = [];
+    // On distingue trois causes de page vide, pour pouvoir le dire ensuite.
+    const echecs: string[] = [];
+    let pagesImage = 0;
 
     for (let index = 1; index <= numPages; index++) {
       let raw = "";
+      let erreur: string | null = null;
+
       try {
         const page = await doc.getPage(index);
         const content = await page.getTextContent();
@@ -164,9 +200,16 @@ export async function extractPdf(file: File, options: ExtractOptions = {}): Prom
           })
           .join("");
 
+        // Une page sans texte est-elle une image ? La réponse change le
+        // diagnostic, donc le message affiché à l'utilisatrice.
+        if (!raw.trim() && (await pageContientUneImage(page, pdfjs))) pagesImage++;
+
         page.cleanup();
-      } catch {
-        raw = ""; // une page illisible ne doit pas faire échouer tout le document
+      } catch (cause) {
+        // Une page illisible ne fait pas échouer tout le document, mais elle
+        // est comptabilisée : c'est ce qui manquait pour diagnostiquer.
+        erreur = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
+        echecs.push(`page ${index} (${erreur})`);
       }
 
       const text = clean(raw);
@@ -177,9 +220,21 @@ export async function extractPdf(file: File, options: ExtractOptions = {}): Prom
     const numChars = pages.reduce((total, page) => total + page.chars, 0);
 
     if (numChars < MIN_TOTAL_CHARS || numChars / numPages < MIN_CHARS_PER_PAGE) {
+      // La plupart des pages ont planté : ce n'est pas un scan, c'est un
+      // problème de lecture, et le dire évite une fausse piste.
+      if (echecs.length > numPages / 2) {
+        throw new ExtractionError(
+          "extraction_failed",
+          `La lecture de ce PDF a échoué sur ${echecs.length} page(s) sur ${numPages}. Détail : ${echecs[0]}.`,
+        );
+      }
+
+      const constat = `${numChars} caractère(s) extrait(s) sur ${numPages} page(s)`;
       throw new ExtractionError(
         "needs_ocr",
-        "Ce PDF ne contient pas de texte exploitable : il s'agit probablement d'un document scanné. La reconnaissance de caractères (OCR) fera l'objet d'une version ultérieure.",
+        pagesImage > 0
+          ? `Ce PDF ne contient pas de texte sélectionnable : ${pagesImage} page(s) sur ${numPages} sont des images (${constat}). C'est le cas des cours photographiés, scannés, ou faits de captures d'écran. La reconnaissance de caractères (OCR) fera l'objet d'une version ultérieure.`
+          : `Ce PDF ne contient pas de texte exploitable (${constat}). S'il s'affiche pourtant avec du texte net, signalez-le : le problème viendrait alors de la lecture, pas du document.`,
       );
     }
     if (numChars > MAX_TEXT_CHARS) {
