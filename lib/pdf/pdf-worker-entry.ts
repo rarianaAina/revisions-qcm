@@ -8,6 +8,15 @@
  */
 import { installPdfPolyfills } from "./polyfills";
 
-installPdfPolyfills();
-
-await import("pdfjs-dist/build/pdf.worker.min.mjs");
+try {
+  installPdfPolyfills();
+  await import("pdfjs-dist/build/pdf.worker.min.mjs");
+} catch (cause) {
+  // Selon les navigateurs, un module de worker qui échoue ne déclenche pas
+  // toujours d'événement « error » côté page : on le signale explicitement
+  // (voir surveillerWorker dans extract.ts), avec l'erreur d'origine.
+  self.postMessage({
+    echecDemarrageWorker: cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause),
+  });
+  throw cause;
+}

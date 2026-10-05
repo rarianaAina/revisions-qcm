@@ -22,6 +22,8 @@ export function PdfUpload({
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState<string | null>(null);
+  // Détail technique de l'échec de lecture, à transmettre tel quel (capture d'écran).
+  const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -30,6 +32,7 @@ export function PdfUpload({
     setPhase("idle");
     setProgress({ done: 0, total: 0 });
     setError(null);
+    setDiagnostic(null);
     if (inputRef.current) inputRef.current.value = "";
   };
 
@@ -37,16 +40,32 @@ export function PdfUpload({
     async (candidate: File) => {
       setFile(candidate);
       setError(null);
+      setDiagnostic(null);
       setProgress({ done: 0, total: 0 });
       setPhase("extracting");
 
+      // Le PDF est lu dans le navigateur : il ne transite jamais par le
+      // serveur, ce qui évite la limite de taille des requêtes. Ses erreurs
+      // sont traitées à part : une TypeError de pdf.js (« undefined is not a
+      // function ») n'a rien d'un problème de connexion.
+      let extracted;
       try {
-        // Le PDF est lu dans le navigateur : il ne transite jamais par le
-        // serveur, ce qui évite la limite de taille des requêtes.
-        const extracted = await extractPdf(candidate, {
+        extracted = await extractPdf(candidate, {
           onProgress: (done, total) => setProgress({ done, total }),
         });
+      } catch (cause) {
+        setPhase("error");
+        if (cause instanceof ExtractionError) {
+          setError(cause.message);
+          setDiagnostic(cause.diagnostic ?? null);
+        } else {
+          setError("La lecture du PDF a échoué.");
+          setDiagnostic(cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause));
+        }
+        return;
+      }
 
+      try {
         setPhase("saving");
 
         const response = await fetch("/api/courses", {
@@ -77,13 +96,11 @@ export function PdfUpload({
         );
       } catch (cause) {
         setPhase("error");
-        if (cause instanceof ExtractionError) {
-          setError(cause.message);
-        } else if (cause instanceof TypeError) {
+        if (cause instanceof TypeError) {
           setError("Connexion au serveur impossible.");
         } else {
           setError(
-            cause instanceof Error ? cause.message : "La lecture du PDF a échoué.",
+            cause instanceof Error ? cause.message : "L'enregistrement du cours a échoué.",
           );
         }
       }
@@ -195,6 +212,11 @@ export function PdfUpload({
       {phase === "error" && error && (
         <Alert tone="error" title="Import impossible">
           <p>{error}</p>
+          {diagnostic && (
+            <pre className="mt-2 whitespace-pre-wrap break-words rounded bg-surface/60 p-2 font-mono text-[11px] leading-snug select-all">
+              {diagnostic}
+            </pre>
+          )}
           <button type="button" onClick={reset} className="mt-1 underline">
             Choisir un autre fichier
           </button>
