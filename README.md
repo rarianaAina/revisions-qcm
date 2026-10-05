@@ -174,7 +174,21 @@ d'OpenAI ne demande même pas de nouveau fichier : réutilisez
    réponses multiples, mélange) et mode (classique ou examen chronométré).
 4. **Répondez** : navigation avant/arrière, réponses conservées, barre de
    progression, accès direct à n'importe quelle question.
-5. **Corrigez** : score en pourcentage, nombre de bonnes et mauvaises réponses,
+   - En **mode classique**, chaque réponse est corrigée dès le clic : la
+     proposition cochée passe en vert si elle est juste, en rouge sinon, avec
+     une icône et un libellé (« Bonne réponse » / « Mauvaise réponse »), pas
+     seulement une couleur. Chaque clic est définitif. Une question à réponse
+     unique se verrouille au premier clic ; une question à réponses multiples
+     se verrouille dès qu'une mauvaise proposition est cochée ou que toutes
+     les bonnes ont été trouvées. Les bonnes réponses manquantes sont alors
+     révélées (encadré vert en pointillés, « Bonne réponse non cochée ») et
+     l'explication s'affiche. Les pastilles de navigation indiquent le
+     verdict de chaque question verrouillée.
+   - En **mode examen**, rien n'est révélé avant la fin : la correction
+     n'arrive qu'à la soumission, comme dans un vrai examen.
+5. **Corrigez** (« Terminer et corriger ») : l'essai est enregistré et noté
+   côté serveur dans les deux modes, avec les réponses verrouillées en mode
+   classique. Score en pourcentage, nombre de bonnes et mauvaises réponses,
    temps écoulé en mode examen, puis pour chaque question votre réponse, la
    bonne réponse, l'explication et la page source du cours.
 6. **Refaire** le même QCM ou en **générer un nouveau** depuis le même cours.
@@ -217,6 +231,19 @@ Safari 17.4 : sur un iPhone plus ancien la lecture échoue sur chaque page.
 `lib/pdf/pdf-worker-entry.ts` les installe **aussi dans le worker**, qui a son
 propre contexte JavaScript et n'hérite pas de celui de la page. C'est pourquoi
 le worker est lancé depuis ce point d'entrée plutôt que par `workerSrc`.
+
+Les correctifs couvrent aussi l'itération asynchrone des `ReadableStream`
+(absente de WebKit : `getTextContent` en dépend) et les API récentes que pdf.js 6
+appelle sans repli
+(`Promise.try`, `Uint8Array.prototype.toHex`/`toBase64`,
+`Map.prototype.getOrInsertComputed`, `Math.sumPrecise`, `URL.parse`, helpers
+d'itérateurs…). Si le worker ne démarre pas (erreur, ou aucun message en
+30 s), la lecture bascule sur le « faux worker » de pdf.js, dans la page.
+
+En cas d'échec, l'écran affiche un bloc de diagnostic : étape, erreur
+d'origine (nom et message, y compris celle remontée du worker), mode de
+lecture, API comblées, version de pdf.js, version d'iOS et navigateur. Une
+capture d'écran suffit pour conclure.
 
 ## 7. Architecture
 
@@ -268,9 +295,13 @@ seul le texte part vers le serveur. Cela contourne la limite de 4,5 Mo de
 Vercel, évite d'héberger un service d'extraction, et le fichier de cours ne
 quitte jamais l'appareil.
 
-**Les bonnes réponses ne quittent jamais le serveur pendant la passation.**
-La page du QCM ne reçoit que les énoncés, les propositions et le nombre de
-réponses attendues. La correction est faite côté serveur à la soumission.
+**Les bonnes réponses ne sont transmises au navigateur qu'en mode classique.**
+En mode classique, la page du QCM reçoit aussi les bonnes réponses et les
+explications, pour corriger chaque question dès le clic : c'est une
+application personnelle, la triche n'y est pas un enjeu. En mode examen, elle
+ne reçoit que les énoncés, les propositions et le nombre de réponses
+attendues. Dans les deux cas, la note enregistrée est calculée côté serveur à
+la soumission (`lib/quiz/grade.ts`), jamais par le navigateur.
 
 **Validation systématique de la sortie du modèle.** Le JSON renvoyé par le LLM
 est validé par Zod puis par des règles métier (4 propositions A–D, pas de

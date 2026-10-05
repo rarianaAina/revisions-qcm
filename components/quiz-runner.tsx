@@ -10,6 +10,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
+import { isAnswerLocked } from "@/lib/quiz/grade";
 import { cn } from "@/lib/utils/cn";
 import { formatDuration } from "@/lib/utils/format";
 import type { AnswerMap, QuizMode } from "@/types/quiz";
@@ -106,6 +107,18 @@ export function QuizRunner({ quiz }: { quiz: PlayableQuiz }) {
   const toggle = (choiceId: string) => {
     setAnswers((previous) => {
       const selected = previous[question.id] ?? [];
+
+      // Correction immediate : chaque clic est definitif. On ne decoche pas
+      // une proposition deja corrigee, et une question verrouillee ne bouge plus.
+      if (question.solution) {
+        const locked = isAnswerLocked(question.solution.correctAnswers, selected);
+        if (locked || selected.includes(choiceId)) return previous;
+        return {
+          ...previous,
+          [question.id]: question.expectedAnswers > 1 ? [...selected, choiceId] : [choiceId],
+        };
+      }
+
       if (question.expectedAnswers > 1) {
         return {
           ...previous,
@@ -193,21 +206,33 @@ export function QuizRunner({ quiz }: { quiz: PlayableQuiz }) {
       {/* Navigation directe : utile pour revenir sur une question laissée de côté. */}
       <nav aria-label="Aller à une question" className="flex flex-wrap gap-1.5">
         {quiz.questions.map((q, index) => {
-          const answered = (answers[q.id]?.length ?? 0) > 0;
+          const selected = answers[q.id] ?? [];
+          const answered = selected.length > 0;
+          // Correction immediate : une question verrouillee affiche son verdict.
+          const verdict =
+            q.solution && isAnswerLocked(q.solution.correctAnswers, selected)
+              ? selected.every((id) => q.solution!.correctAnswers.includes(id))
+              : null;
+          const status =
+            verdict === null ? (answered ? " (répondue)" : "") : verdict ? " (juste)" : " (fausse)";
           return (
             <button
               key={q.id}
               type="button"
               onClick={() => setCurrent(index)}
-              aria-label={`Question ${index + 1}${answered ? " (répondue)" : ""}`}
+              aria-label={`Question ${index + 1}${status}`}
               aria-current={index === current}
               className={cn(
                 "size-8 rounded-md border text-xs font-medium transition-colors",
                 index === current
                   ? "border-accent bg-accent text-white"
-                  : answered
-                    ? "border-accent/40 bg-accent-soft text-accent"
-                    : "border-line bg-surface text-muted hover:border-accent/40",
+                  : verdict !== null
+                    ? verdict
+                      ? "border-success/40 bg-success-soft text-success"
+                      : "border-danger/40 bg-danger-soft text-danger"
+                    : answered
+                      ? "border-accent/40 bg-accent-soft text-accent"
+                      : "border-line bg-surface text-muted hover:border-accent/40",
               )}
             >
               {index + 1}

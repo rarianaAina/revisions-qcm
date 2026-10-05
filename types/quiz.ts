@@ -47,6 +47,9 @@ export interface Quiz {
 /** Question telle qu'envoyee au navigateur pendant la passation : sans la solution. */
 export type PublicQuestion = Omit<Question, "correctAnswers" | "explanation">;
 
+/** Solution transmise au navigateur en mode classique, pour la correction immediate. */
+export type QuestionSolution = Pick<Question, "correctAnswers" | "explanation">;
+
 export interface QuizOptions {
   numQuestions: number;
   difficulty: Difficulty;

@@ -9,8 +9,12 @@ export default async function QuizPage({ params }: { params: Promise<{ id: strin
   const stored = await getQuiz(id);
   if (!stored) notFound();
 
-  // Les bonnes reponses et les explications restent cote serveur : seul le
-  // nombre de reponses attendues est transmis, pour choisir radio ou case.
+  // Mode classique : la solution est transmise pour corriger chaque question
+  // des le clic (application personnelle, la triche n'est pas un enjeu).
+  // Mode examen : les bonnes reponses et les explications restent cote
+  // serveur, seul le nombre de reponses attendues est transmis.
+  const instantFeedback = stored.mode === "classic";
+
   const quiz: PlayableQuiz = {
     id: stored.id,
     title: stored.title,
@@ -23,6 +27,12 @@ export default async function QuizPage({ params }: { params: Promise<{ id: strin
       choices: question.choices,
       sourcePage: question.sourcePage,
       expectedAnswers: question.correctAnswers.length,
+      ...(instantFeedback && {
+        solution: {
+          correctAnswers: question.correctAnswers,
+          explanation: question.explanation,
+        },
+      }),
     })),
   };
 
